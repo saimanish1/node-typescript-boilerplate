@@ -1,34 +1,77 @@
-/**
- * Some predefined delay values (in milliseconds).
- */
-export enum Delays {
-  Short = 500,
-  Medium = 2000,
-  Long = 5000,
+import axios from 'axios';
+
+interface Location {
+  name: string;
+  id: string;
 }
 
-/**
- * Returns a Promise<string> that resolves after a given time.
- *
- * @param {string} name - A name.
- * @param {number=} [delay=Delays.Medium] - A number of milliseconds to delay resolution of the Promise.
- * @returns {Promise<string>}
- */
-function delayedHello(
-  name: string,
-  delay: number = Delays.Medium,
-): Promise<string> {
-  return new Promise((resolve: (value?: string) => void) =>
-    setTimeout(() => resolve(`Hello, ${name}`), delay),
-  );
+interface Employee {
+  name: string;
+  id: string;
+  categoryCode: string;
 }
 
-// Please see the comment in the .eslintrc.json file about the suppressed rule!
-// Below is an example of how to use ESLint errors suppression. You can read more
-// at https://eslint.org/docs/latest/user-guide/configuring/rules#disabling-rules
-
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-export async function greeter(name: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-  // The name parameter should be of type string. Any is used only to trigger the rule.
-  return await delayedHello(name, Delays.Long);
+interface Transaction {
+  transactionID: string;
+  timeStamp: string;
+  amount: number;
+  type: string;
+  location: Location;
+  employee: Employee;
 }
+
+interface TaskResponse {
+  id: string;
+  transactions: Transaction[];
+}
+
+interface SubmitTaskRequest {
+  id: string;
+  result: string[];
+}
+
+async function getTask(): Promise<void> {
+  try {
+    const response = await axios.get<TaskResponse>('https://interview.adpeai.com/api/v2/get-task');
+    const { id, transactions } = response.data;
+
+    const lastYear = new Date().getFullYear() - 1;
+    const lastYearTransactions = transactions.filter(tx => {
+      const txYear = new Date(tx.timeStamp).getFullYear();
+      return txYear === lastYear;
+    });
+
+    const employeeEarnings = lastYearTransactions.reduce<Record<string, { name: string; totalAmount: number; transactions: Transaction[] }>>((acc, tx) => {
+      const employeeId = tx.employee.id;
+      if (!acc[employeeId]) {
+        acc[employeeId] = {
+          name: tx.employee.name,
+          totalAmount: 0,
+          transactions: [],
+        };
+      }
+      acc[employeeId].totalAmount += tx.amount;
+      acc[employeeId].transactions.push(tx);
+      return acc;
+    }, {});
+
+    const topEarner = Object.values(employeeEarnings).reduce((top, current) => {
+      return current.totalAmount > top.totalAmount ? current : top;
+    }, { name: '', totalAmount: 0, transactions: [] });
+
+    const alphaTransactionIDs = topEarner.transactions
+      .filter(tx => tx.type === 'alpha')
+      .map(tx => tx.transactionID);
+
+    const submitResponse = await axios.post<unknown>('https://interview.adpeai.com/api/v2/submit-task', {
+      id: id,
+      result: alphaTransactionIDs,
+    } as SubmitTaskRequest);
+
+    console.log('Response Status:', submitResponse.status);
+  } catch (error) {
+    console.error('Error:', error.message);
+  }
+}
+
+getTask();
